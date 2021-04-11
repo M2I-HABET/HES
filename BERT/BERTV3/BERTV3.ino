@@ -8,8 +8,8 @@
 /*
  * Some code based on the following Libraries
  * - Sparkfun GNSS Library
+ * - Adafruit Arcada
  * 
- * - MicroNMEA
  */
 
 /*
@@ -54,7 +54,7 @@
 #include <Adafruit_BMP280.h>
 #include <PDM.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
-#include <MicroNMEA.h> //http://librarymanager/All#MicroNMEA
+
 
 /**************************************************************************************************
 ** Declare global variables and instantiate classes                                              **
@@ -71,10 +71,8 @@ Adafruit_BMP280 bmp280;
 extern PDMClass PDM;
 extern Adafruit_FlashTransport_QSPI flashTransport;
 extern Adafruit_SPIFlash Arcada_QSPI_Flash;
-
 SFE_UBLOX_GNSS myGNSS;
-char nmeaBuffer[100];
-MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
+
 
 uint32_t buttons, last_buttons;
 uint8_t j = 0;  // neopixel counter for rainbow
@@ -215,7 +213,9 @@ void setup()
     while(1);
   }
   Serial.println("Mounted filesystem!");
-
+  
+  arcada.display->setTextColor(ARCADA_WHITE);
+  arcada.display->println("Getting a clue...");
   arcada.display->setTextColor(ARCADA_WHITE);
   arcada.display->println("Sensors Found: ");
 
@@ -297,6 +297,10 @@ void setup()
   }
 
   Serial.println("Setup Process Comlplete...Booting BERTOS");
+  arcada.display->setTextColor(ARCADA_GREEN);
+  arcada.display->println("Bootup Complete!");
+  delay(1000);
+  arcada.display->fillScreen(ARCADA_BLACK);
 }
 
 /*!
@@ -313,140 +317,95 @@ void loop()
   float temp;
   float pres;
   float humidity;
-
-  Serial.print(F("Lat: "));
-    Serial.print(latitude);
-    arcada.display->print("lat: ");
-    arcada.display->print(latitude);
-    // arcada.display->print(" %");
-    arcada.display->println("         ");
+  long latitude;
+  long longitude;
+  long altitude;
+  long altitudeMSL;
+  byte SIV;
+  int Year;
+  int Month;
+  int Day;
+  int Hour;
+  int Minute;
+  int Second;
+  byte fixType;
+  byte RTK;
 
   /*
    * Read Data from sources, do this once a second
    */
 
-  if (millis() - lastTime > 1000)
+  if (millis() - lastTime > 750)
   {
     lastTime = millis(); //Update the timer
+
+    temp = bmp280.readTemperature();
+    pres = bmp280.readPressure()/100;
+    humidity = sht30.readHumidity();
     
-    long latitude = myGNSS.getLatitude();
+    latitude = myGNSS.getLatitude();
 
-    long longitude = myGNSS.getLongitude();
-    Serial.print(F(" Long: "));
-    Serial.print(longitude);
-    Serial.print(F(" (degrees * 10^-7)"));
-    arcada.display->print("lon: ");
-    arcada.display->print(longitude);
-    // arcada.display->print(" %");
-    arcada.display->println("         ");
+    longitude = myGNSS.getLongitude();
 
-    long altitude = myGNSS.getAltitude();
-    Serial.print(F(" Alt: "));
-    Serial.print(altitude);
-    Serial.print(F(" (mm)"));
-    arcada.display->print("alt: ");
-    arcada.display->print(altitude);
-    // arcada.display->print(" %");
-    arcada.display->println("         ");
+    altitude = myGNSS.getAltitude();
 
-    long altitudeMSL = myGNSS.getAltitudeMSL();
-    Serial.print(F(" AltMSL: "));
-    Serial.print(altitudeMSL);
-    Serial.print(F(" (mm)"));
+    altitudeMSL = myGNSS.getAltitudeMSL();
+    
+    SIV = myGNSS.getSIV();
+    Year = myGNSS.getYear();
+    Month = myGNSS.getMonth();
+    Day = myGNSS.getDay();
+    Hour = myGNSS.getHour();
+    Minute = myGNSS.getMinute();
+    Second = myGNSS.getSecond();
 
-    byte SIV = myGNSS.getSIV();
-    Serial.print(F(" SIV: "));
-    Serial.print(SIV);
+    fixType = myGNSS.getFixType();
+    /*
+    if(fixType == 0) Fix="No fix";
+    else if(fixType == 1) Fix="Dead reckoning";
+    else if(fixType == 2) Fix="2D";
+    else if(fixType == 3) Fix="3D";
+    else if(fixType == 4) Fix="GNSS + Dead reckoning";
+    else if(fixType == 5) Fix="Time only";
+    */
 
-    byte fixType = myGNSS.getFixType();
-    Serial.print(F(" Fix: "));
-    if(fixType == 0) Serial.print(F("No fix"));
-    else if(fixType == 1) Serial.print(F("Dead reckoning"));
-    else if(fixType == 2) Serial.print(F("2D"));
-    else if(fixType == 3) Serial.print(F("3D"));
-    else if(fixType == 4) Serial.print(F("GNSS + Dead reckoning"));
-    else if(fixType == 5) Serial.print(F("Time only"));
+    RTK = myGNSS.getCarrierSolutionType();
+    /*
+    if (RTK == 0) RTXType="No solution";
+    else if (RTK == 1) RTXType="High precision floating fix";
+    else if (RTK == 2) RTXType="High precision fix";
+    */
 
-    byte RTK = myGNSS.getCarrierSolutionType();
-    Serial.print(" RTK: ");
-    Serial.print(RTK);
-    if (RTK == 0) Serial.print(F(" (No solution)"));
-    else if (RTK == 1) Serial.print(F(" (High precision floating fix)"));
-    else if (RTK == 2) Serial.print(F(" (High precision fix)"));
-
-    Serial.println();
-    Serial.print(myGNSS.getYear());
-    Serial.print("-");
-    Serial.print(myGNSS.getMonth());
-    Serial.print("-");
-    Serial.print(myGNSS.getDay());
-    Serial.print(" ");
-    Serial.print(myGNSS.getHour());
-    Serial.print(":");
-    Serial.print(myGNSS.getMinute());
-    Serial.print(":");
-    Serial.print(myGNSS.getSecond());
-
-    Serial.print("  Time is ");
-    if (myGNSS.getTimeValid() == false)
-    {
-      Serial.print("not ");
-    }
-    Serial.print("valid  Date is ");
-    if (myGNSS.getDateValid() == false)
-    {
-      Serial.print("not ");
-    }
-    Serial.print("valid");
-
-    Serial.println();
-
+    
   }
 
-  temp = bmp280.readTemperature();
-  pres = bmp280.readPressure()/100;
-  humidity = sht30.readHumidity();
+/*!
+  @brief    Write data to internal Flash memory
+  @details  Take the data collected and store into the internal
+            Flash memory on the Clue Board. This will append to the
+            file in case of power failure. File format is as follows
+            Temp,Pressure,Humidity,Lat,Lon,Altitude,FixType
+  @return   void
+*/
 
-  
-  arcada.display->setTextColor(ARCADA_WHITE, ARCADA_BLACK);
-  arcada.display->setCursor(0, 100);
-  
-  arcada.display->print("Temp: ");
-  arcada.display->print(temp);
-  arcada.display->print(" C");
-  arcada.display->println("         ");
-  Serial.print(F("Temp: "));
-  Serial.print(temp);
-  
-  arcada.display->print("Baro: ");
-  arcada.display->print(pres);
-  arcada.display->print(" hPa");
-  arcada.display->println("         ");
-  Serial.print(F("Pres: "));
-  Serial.print(pres);
-  
-  arcada.display->print("Humid: ");
-  arcada.display->print(humidity);
-  arcada.display->print(" %");
-  arcada.display->println("         ");
-  Serial.print(F("Humid: "));
-  Serial.print(humidity);
-
-  // Open the datalogging file for writing.  The FILE_WRITE mode will open
+ // Open the datalogging file for writing.  The FILE_WRITE mode will open
   // the file for appending, i.e. it will add new data to the end of the file.
   File dataFile = fatfs.open(FILE_NAME, FILE_WRITE);
   // Check that the file opened successfully and write a line to it.
   if (dataFile) {
-    // Take a new data reading from a sensor, etc.  For this example just
-    // make up a random number.
-    // int reading = random(0,100);
-    // Write a line to the file.  You can use all the same print functions
-    // as if you're writing to the serial monitor.  For example to write
-    // two CSV (commas separated) values:
-    dataFile.print("temp:");
-    // dataFile.print(",");
-    dataFile.print(temp, 2);
+    dataFile.print(temp,2);
     dataFile.print(",");
+    dataFile.print(pres, 2);
+    dataFile.print(",");
+    dataFile.print(humidity, 2);
+    dataFile.print(",");
+    dataFile.print(latitude);
+    dataFile.print(",");
+    dataFile.print(longitude);
+    dataFile.print(",");
+    dataFile.print(altitudeMSL);
+    dataFile.print(",");
+    dataFile.print(fixType);
     dataFile.println();
     // Finally close the file when done writing.  This is smart to do to make
     // sure all the data is written to the file.
@@ -457,12 +416,80 @@ void loop()
     Serial.println("Failed to open data file for writing!");
   }
 
+/*
+ * Update the Arcada Display
+ */
+  arcada.display->fillScreen(ARCADA_BLACK);
+  arcada.display->setTextColor(ARCADA_WHITE, ARCADA_BLACK);
+  arcada.display->setCursor(0, 0);
+  
+  arcada.display->print("Temp: ");
+  arcada.display->print(temp);
+  arcada.display->print(" C");
+  arcada.display->println("         ");
+  
+  arcada.display->print("Baro: ");
+  arcada.display->print(pres);
+  arcada.display->print(" hPa");
+  arcada.display->println("         ");
+  
+  arcada.display->print("Humid: ");
+  arcada.display->print(humidity);
+  arcada.display->print(" %");
+  arcada.display->println("         ");
 
-  //Query module only every second. Doing it more often will just cause I2C traffic.
-  //The module only responds when a new position is available
+  arcada.display->print("lat: ");
+  arcada.display->print(latitude);
+  arcada.display->println("         ");
+
+  arcada.display->print("lon: ");
+  arcada.display->print(longitude);
+  arcada.display->println("         ");
+
+  arcada.display->print("alt: ");
+  arcada.display->print(altitude);
+  arcada.display->println("         ");
+
+  arcada.display->print("altMSL: ");
+  arcada.display->print(altitudeMSL);
+  arcada.display->println("         ");
+
+  /*
+   * Print to Serial Output
+   */
+
+  Serial.print(F("Temp: "));
+  Serial.print(temp);
+
+  Serial.print(F("Pres: "));
+  Serial.print(pres);
+
+  Serial.print(F("Humid: "));
+  Serial.println(humidity);
+
+  Serial.print("Lat: ");
+  Serial.print(latitude);
+
+  Serial.print("Long: ");
+  Serial.print(longitude);
+  Serial.print(" (degrees * 10^-7)");
   
- 
-  
+
+  Serial.print("Alt: ");
+  Serial.print(altitude);
+  Serial.print(" (mm)");
+
+  Serial.print("AltMSL: ");
+  Serial.print(altitudeMSL);
+  Serial.print(" (mm)");
+
+  Serial.print("SIV: ");
+  Serial.print(SIV);
+
+  Serial.print("Fix: ");
+  Serial.println(fixType);
+
+
   /*
    * GPS Processing
    * String has the following format
