@@ -1,13 +1,14 @@
 /*
  * Backup Emergency Recovery Transmitter
  * HW Version - 3.0
- * FW Version - 1.1
+ * FW Version - 1.2
  * Matthew E. Nelson
  */
 
 /*
  * Some code based on the following Libraries
  * - Sparkfun GNSS Library
+ * - Iridium library
  * - Adafruit Arcada
  * 
  */
@@ -54,6 +55,8 @@
 #include <Adafruit_BMP280.h>
 #include <PDM.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
+#include <IridiumSBD.h> // Click here to get the library: http://librarymanager/All#IridiumSBDI2C
+#include <time.h>
 
 
 /**************************************************************************************************
@@ -72,6 +75,13 @@ extern PDMClass PDM;
 extern Adafruit_FlashTransport_QSPI flashTransport;
 extern Adafruit_SPIFlash Arcada_QSPI_Flash;
 SFE_UBLOX_GNSS myGNSS;
+
+//Setup the second serial port that talks to the RockBloc
+#define IridiumSerial Serial1
+#define DIAGNOSTICS false // Change this to see diagnostics
+
+// Declare the IridiumSBD object
+IridiumSBD modem(IridiumSerial);
 
 
 uint32_t buttons, last_buttons;
@@ -145,7 +155,6 @@ void setup()
 {
   
   Serial.begin(115200);
-  
   Serial.println("Backup Emergency Recovery Transmitter (BERT");
   Serial.println("===========================================");
   Serial.println(" HW Rev. 3.0 | FW Rev. 1.0");
@@ -296,6 +305,74 @@ void setup()
     Serial.println("OK");
   }
 
+  Serial.print("Initializing RockBloc Sat Modem");
+  int signalQuality = -1;
+  int err;
+
+  // Start the serial port connected to the satellite modem
+  IridiumSerial.begin(19200);
+
+  // Begin satellite modem operation
+  Serial.println(F("Starting SatComm..."));
+  err = modem.begin();
+  if (err != ISBD_SUCCESS)
+  {
+    Serial.print(F("SatComm: error "));
+    Serial.println(err);
+    arcada.display->setTextColor(ARCADA_RED);
+    if (err == ISBD_NO_MODEM_DETECTED)
+      Serial.println(F("No modem detected: check wiring."));
+    return;
+  }
+  else{
+    Serial.println("OK");
+    Serial.println("Displaying SatCom FW and IMEI");
+    // Example: Print the firmware revision
+    char version[12];
+    err = modem.getFirmwareVersion(version, sizeof(version));
+    if (err != ISBD_SUCCESS)
+    {
+       Serial.print(F("FirmwareVersion failed: error "));
+       Serial.println(err);
+       return;
+    }
+    Serial.print(F("Firmware Version is "));
+    Serial.print(version);
+    Serial.println(F("."));
+  
+    // Example: Print the IMEI
+    char IMEI[16];
+    err = modem.getIMEI(IMEI, sizeof(IMEI));
+    if (err != ISBD_SUCCESS)
+    {
+       Serial.print(F("getIMEI failed: error "));
+       Serial.println(err);
+       return;
+    }
+    Serial.print(F("IMEI is "));
+    Serial.print(IMEI);
+    Serial.println(F("."));
+
+    // Example: Test the signal quality.
+    // This returns a number between 0 and 5.
+    // 2 or better is preferred.
+    err = modem.getSignalQuality(signalQuality);
+    if (err != ISBD_SUCCESS)
+    {
+      Serial.print(F("SignalQuality failed: error "));
+      Serial.println(err);
+      return;
+    }
+  
+    Serial.print(F("On a scale of 0 to 5, signal quality is currently "));
+    Serial.print(signalQuality);
+    Serial.println(F("."));
+
+    
+    arcada.display->setTextColor(ARCADA_GREEN);
+    arcada.display->println("Sat Radio");
+  }
+
   Serial.println("Setup Process Comlplete...Booting BERTOS");
   arcada.display->setTextColor(ARCADA_GREEN);
   arcada.display->println("Bootup Complete!");
@@ -314,22 +391,15 @@ void setup()
 void loop()
 {
   
-  float temp;
-  float pres;
-  float humidity;
-  long latitude;
-  long longitude;
-  long altitude;
+  float temp, pres, humidity = 0;
+  long latitude, longitude,altitude = 0;
   long altitudeMSL;
   byte SIV;
-  int Year;
-  int Month;
-  int Day;
-  int Hour;
-  int Minute;
-  int Second;
+  int Year, Month, Day, Hour, Minute, Second;
   byte fixType;
   byte RTK;
+  int signalQuality = -1;
+  int err;
 
   /*
    * Read Data from sources, do this once a second
@@ -338,17 +408,12 @@ void loop()
   if (millis() - lastTime > 750)
   {
     lastTime = millis(); //Update the timer
-
     temp = bmp280.readTemperature();
     pres = bmp280.readPressure()/100;
     humidity = sht30.readHumidity();
-    
     latitude = myGNSS.getLatitude();
-
     longitude = myGNSS.getLongitude();
-
     altitude = myGNSS.getAltitude();
-
     altitudeMSL = myGNSS.getAltitudeMSL();
     
     SIV = myGNSS.getSIV();
@@ -375,8 +440,74 @@ void loop()
     else if (RTK == 1) RTXType="High precision floating fix";
     else if (RTK == 2) RTXType="High precision fix";
     */
+  }
 
+  /*
+   * Send Data via SatCom. Do this once every 2 minutes
+   */
+
+  if (millis() - lastTime > 120000)
+  {
+    lastTime = millis(); //Update the timer
+    temp = bmp280.readTemperature();
+    pres = bmp280.readPressure()/100;
+    humidity = sht30.readHumidity();
+    latitude = myGNSS.getLatitude();
+    longitude = myGNSS.getLongitude();
+    altitude = myGNSS.getAltitude();
+    altitudeMSL = myGNSS.getAltitudeMSL();
     
+    SIV = myGNSS.getSIV();
+    Year = myGNSS.getYear();
+    Month = myGNSS.getMonth();
+    Day = myGNSS.getDay();
+    Hour = myGNSS.getHour();
+    Minute = myGNSS.getMinute();
+    Second = myGNSS.getSecond();
+    fixType = myGNSS.getFixType();
+    /*
+    if(fixType == 0) Fix="No fix";
+    else if(fixType == 1) Fix="Dead reckoning";
+    else if(fixType == 2) Fix="2D";
+    else if(fixType == 3) Fix="3D";
+    else if(fixType == 4) Fix="GNSS + Dead reckoning";
+    else if(fixType == 5) Fix="Time only";
+    */
+
+    RTK = myGNSS.getCarrierSolutionType();
+    /*
+    if (RTK == 0) RTXType="No solution";
+    else if (RTK == 1) RTXType="High precision floating fix";
+    else if (RTK == 2) RTXType="High precision fix";
+    */
+
+
+    // Send the message
+    Serial.println(F("Sending Data..."));
+    err = modem.sendSBDText("Hello, world!");
+    if (err != ISBD_SUCCESS)
+    {
+      Serial.print(F("sendSBDText failed: error "));
+      Serial.println(err);
+      if (err == ISBD_SENDRECEIVE_TIMEOUT)
+        Serial.println(F("Try again with a better view of the sky."));
+    }
+  
+    else
+    {
+      Serial.println(F("Message Sent!"));
+    }
+  
+    // Clear the Mobile Originated message buffer
+    Serial.println(F("Clearing the MO buffer."));
+    err = modem.clearBuffers(ISBD_CLEAR_MO); // Clear MO buffer
+    if (err != ISBD_SUCCESS)
+    {
+      Serial.print(F("clearBuffers failed: error "));
+      Serial.println(err);
+    }
+  
+    Serial.println(F("Done!"));
   }
 
 /*!
@@ -632,3 +763,15 @@ void onPDMdata() {
   // 16-bit, 2 bytes per sample
   samplesRead = bytesAvailable / 2;
 }
+
+#if DIAGNOSTICS
+void ISBDConsoleCallback(IridiumSBD *device, char c)
+{
+  Serial.write(c);
+}
+
+void ISBDDiagsCallback(IridiumSBD *device, char c)
+{
+  Serial.write(c);
+}
+#endif
