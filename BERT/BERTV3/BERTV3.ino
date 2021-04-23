@@ -480,11 +480,17 @@ void loop()
     else if (RTK == 1) RTXType="High precision floating fix";
     else if (RTK == 2) RTXType="High precision fix";
     */
-
-
+    dtostrf(latitude, 10, 7, result);
+    //String telem;
+    //telem = String();
+    //Can't have more than 340 bytes for transmission
+    char telem_sat[300];
+    String telem = latitude + ',' + longitude + ',' + altitude + ',' + fixType + ',' +temp+','+pres+','+humidity;
+    telem_sat = telem.toCharArray(telem,300);
     // Send the message
-    Serial.println(F("Sending Data..."));
-    err = modem.sendSBDText("Hello, world!");
+    Serial.print(F("Sending Data: "));
+    Serial.println(telem);
+    err = modem.sendSBDText(telem_sat);
     if (err != ISBD_SUCCESS)
     {
       Serial.print(F("sendSBDText failed: error "));
