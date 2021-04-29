@@ -1,7 +1,7 @@
 /*
  * Backup Emergency Recovery Transmitter
  * HW Version - 3.0
- * FW Version - 1.2
+ * FW Version - 1.3
  * Matthew E. Nelson
  */
 
@@ -13,36 +13,23 @@
  * 
  */
 
-/*
-  Read NMEA sentences over I2C using u-blox module SAM-M8Q, NEO-M8P, etc
-  By: Nathan Seidle
-  SparkFun Electronics
-  Date: August 22nd, 2018
-  License: MIT. See license file for more information but you can
-  basically do whatever you want with this code.
-
-  This example reads the NMEA characters over I2C and pipes them to MicroNMEA
-  This example will output your current long/lat and satellites in view
+/********HARDWARE REQUIREMENTS*****************
+ * - Adafruit Clue Board
+ * - Sparkfun Neo GPS Unit 
+ * - Sparkfun RockBlock 9603 SatComm
+ * 
+ * Hardware hookup is via QWICC Connector
+ * (CLUE <-> [QWIIC] <----> [QWIIC] <-> Sparkfun GPS BOB
+ *   ^
+ *   | UART (SERIAL1)
+ *   RockBlock 9603
+ * 
+ * NOTE - Clue board requires 3-6 VDC (different from Micro:bit)
+ * Recommend using 3 AA or Boost board
+ * RockBlock needs 5V DC
+ * *********************************************/
  
-  Feel like supporting open source hardware?
-  Buy a board from SparkFun!
-  ZED-F9P RTK2: https://www.sparkfun.com/products/15136
-  NEO-M8P RTK: https://www.sparkfun.com/products/15005
-  SAM-M8Q: https://www.sparkfun.com/products/15106
-
-  For more MicroNMEA info see https://github.com/stevemarple/MicroNMEA
-
-  Hardware Connections:
-  Plug a Qwiic cable into the GNSS and a BlackBoard
-  If you don't have a platform with a Qwiic connection use the SparkFun Qwiic Breadboard Jumper (https://www.sparkfun.com/products/14425)
-  Open the serial monitor at 115200 baud to see the output
-  Go outside! Wait ~25 seconds and you should see your lat/long
-*/
-
-/**************************************************************************************************
-** Includes and libraries used in this project                                                   **
-**************************************************************************************************/
-
+#include <time.h>
 #include <Wire.h> //Needed for I2C to GNSS GPS
 #include <Adafruit_Arcada.h>
 #include <Adafruit_SPIFlash.h>
@@ -53,11 +40,9 @@
 #include <Adafruit_SHT31.h>
 #include <Adafruit_APDS9960.h>
 #include <Adafruit_BMP280.h>
-#include <PDM.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
 #include <IridiumSBD.h> // Click here to get the library: http://librarymanager/All#IridiumSBDI2C
 #include <time.h>
-
 
 /**************************************************************************************************
 ** Declare global variables and instantiate classes                                              **
@@ -71,7 +56,6 @@ Adafruit_LIS3MDL lis3mdl;
 Adafruit_SHT31 sht30;
 Adafruit_APDS9960 apds9960;
 Adafruit_BMP280 bmp280;
-extern PDMClass PDM;
 extern Adafruit_FlashTransport_QSPI flashTransport;
 extern Adafruit_SPIFlash Arcada_QSPI_Flash;
 SFE_UBLOX_GNSS myGNSS;
@@ -141,37 +125,19 @@ typedef struct gpsdata {
 // Configuration for the datalogging file:
 #define FILE_NAME      "data.csv"
 
-long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
+unsigned long myTime;
+unsigned long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
+unsigned long lastTime2 = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 
-/*!
-  @brief    Arduino method for setting up the hardware
-  @details  Setup configures the hardware. I also use this to perform some initial
-            checks on the hardware to make sure they are functioning. Output is via
-            display and serial.
-  @return   void
-*/
-
-void setup()
-{
+void setup() {
   
   Serial.begin(115200);
+  delay(500);
   Serial.println("Backup Emergency Recovery Transmitter (BERT");
   Serial.println("===========================================");
-  Serial.println(" HW Rev. 3.0 | FW Rev. 1.0");
+  Serial.println(" HW Rev. 3.0 | FW Rev. 1.3");
   Serial.println("===========================================");
-  // enable NFC pins  
-  if ((NRF_UICR->NFCPINS & UICR_NFCPINS_PROTECT_Msk) == (UICR_NFCPINS_PROTECT_NFC << UICR_NFCPINS_PROTECT_Pos)){
-    Serial.println("Fix NFC pins");
-    NRF_NVMC->CONFIG = NVMC_CONFIG_WEN_Wen << NVMC_CONFIG_WEN_Pos;
-    while (NRF_NVMC->READY == NVMC_READY_READY_Busy);
-    NRF_UICR->NFCPINS &= ~UICR_NFCPINS_PROTECT_Msk;
-    while (NRF_NVMC->READY == NVMC_READY_READY_Busy);
-    NRF_NVMC->CONFIG = NVMC_CONFIG_WEN_Ren << NVMC_CONFIG_WEN_Pos;
-    while (NRF_NVMC->READY == NVMC_READY_READY_Busy);
-    Serial.println("Done");
-    NVIC_SystemReset();
-  }
-
+  delay(5000);
   pinMode(WHITE_LED, OUTPUT);
   digitalWrite(WHITE_LED, LOW);
   
@@ -196,12 +162,6 @@ void setup()
   arcada.display->setTextWrap(true);
   arcada.display->setTextSize(2);
   Serial.println("OK");
-  
-  /********** Check MIC */
-  PDM.onReceive(onPDMdata);
-  if (!PDM.begin(1, 16000)) {
-    Serial.println("**Failed to start PDM!");
-  }
   
   /********** Setup QSPI Flash Memory */
   Serial.print("Setting up Filesystem...");
@@ -228,7 +188,7 @@ void setup()
   arcada.display->setTextColor(ARCADA_WHITE);
   arcada.display->println("Sensors Found: ");
 
-  /********** Check APDS */
+ 
   Serial.print("Checking APDS...");
   if (!apds9960.begin()) {
     Serial.println("No APDS9960 found");
@@ -239,6 +199,7 @@ void setup()
     apds9960.enableColor(true);
   }
   arcada.display->print("APDS9960 ");
+
 
   /********** Check LSM6DS33 */
   Serial.print("Checking LSM6DS33...");
@@ -304,7 +265,8 @@ void setup()
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
     Serial.println("OK");
   }
-
+  
+ 
   Serial.print("Initializing RockBloc Sat Modem");
   int signalQuality = -1;
   int err;
@@ -367,8 +329,6 @@ void setup()
     Serial.print(F("On a scale of 0 to 5, signal quality is currently "));
     Serial.print(signalQuality);
     Serial.println(F("."));
-
-    
     arcada.display->setTextColor(ARCADA_GREEN);
     arcada.display->println("Sat Radio");
   }
@@ -376,23 +336,14 @@ void setup()
   Serial.println("Setup Process Comlplete...Booting BERTOS");
   arcada.display->setTextColor(ARCADA_GREEN);
   arcada.display->println("Bootup Complete!");
-  delay(1000);
+  delay(5000);
   arcada.display->fillScreen(ARCADA_BLACK);
-}
-
-/*!
-  @brief    Arduino method for the main program loop
-  @details  This is the main program for the Arduino IDE, it is an infinite loop and keeps on
-            repeating. This will gather the data by calling the needed functions and then 
-            display or store the data as needed.
-  @return   void
-*/
-
-void loop()
-{
   
-  float temp, pres, humidity = 0;
-  long latitude, longitude,altitude = 0;
+}
+void loop() {
+
+  float temp, pres, humidity;
+  long GPSLat, GPSLon,GPSAlt;
   long altitudeMSL;
   byte SIV;
   int Year, Month, Day, Hour, Minute, Second;
@@ -400,20 +351,27 @@ void loop()
   byte RTK;
   int signalQuality = -1;
   int err;
+  char IMEI[16];
 
-  /*
-   * Read Data from sources, do this once a second
-   */
-
-  if (millis() - lastTime > 750)
+/*!
+  @brief    1 Second Routine
+  @details  At 1 second intervals, collect data, send to Serial and 
+            send data to Flash memory on the Clue Board. This will append
+            to the file in case of power failure. File format is as follows
+            Temp,Pressure,Humidity,Lat,Lon,Altitude,FixType
+  @return   void
+*/
+  
+  if (millis() - lastTime > 1000)
   {
+    Serial.println("In the 1 sec function");
     lastTime = millis(); //Update the timer
     temp = bmp280.readTemperature();
     pres = bmp280.readPressure()/100;
     humidity = sht30.readHumidity();
-    latitude = myGNSS.getLatitude();
-    longitude = myGNSS.getLongitude();
-    altitude = myGNSS.getAltitude();
+    GPSLat = myGNSS.getLatitude();
+    GPSLon = myGNSS.getLongitude();
+    GPSAlt = myGNSS.getAltitude();
     altitudeMSL = myGNSS.getAltitudeMSL();
     
     SIV = myGNSS.getSIV();
@@ -423,38 +381,140 @@ void loop()
     Hour = myGNSS.getHour();
     Minute = myGNSS.getMinute();
     Second = myGNSS.getSecond();
-
     fixType = myGNSS.getFixType();
-    /*
-    if(fixType == 0) Fix="No fix";
-    else if(fixType == 1) Fix="Dead reckoning";
-    else if(fixType == 2) Fix="2D";
-    else if(fixType == 3) Fix="3D";
-    else if(fixType == 4) Fix="GNSS + Dead reckoning";
-    else if(fixType == 5) Fix="Time only";
-    */
 
-    RTK = myGNSS.getCarrierSolutionType();
-    /*
-    if (RTK == 0) RTXType="No solution";
-    else if (RTK == 1) RTXType="High precision floating fix";
-    else if (RTK == 2) RTXType="High precision fix";
-    */
+    // Open the datalogging file for writing.  The FILE_WRITE mode will open
+  // the file for appending, i.e. it will add new data to the end of the file.
+  File dataFile = fatfs.open(FILE_NAME, FILE_WRITE);
+  // Check that the file opened successfully and write a line to it.
+  if (dataFile) {
+    dataFile.print(temp,2);
+    dataFile.print(",");
+    dataFile.print(pres, 2);
+    dataFile.print(",");
+    dataFile.print(humidity, 2);
+    dataFile.print(",");
+    dataFile.print(GPSLat);
+    dataFile.print(",");
+    dataFile.print(GPSLon);
+    dataFile.print(",");
+    dataFile.print(altitudeMSL);
+    dataFile.print(",");
+    dataFile.print(fixType);
+    dataFile.println();
+    // Finally close the file when done writing.  This is smart to do to make
+    // sure all the data is written to the file.
+    dataFile.close();
+    Serial.println("Wrote new measurement to data file!");
+  }
+  else {
+    Serial.println("Failed to open data file for writing!");
   }
 
   /*
-   * Send Data via SatCom. Do this once every 2 minutes
+   * Update the Arcada Display
    */
 
-  if (millis() - lastTime > 120000)
+    arcada.display->fillScreen(ARCADA_BLACK);
+    arcada.display->setTextColor(ARCADA_WHITE, ARCADA_BLACK);
+    arcada.display->setCursor(0, 0);
+    
+    arcada.display->print("Temp: ");
+    arcada.display->print(temp);
+    arcada.display->print(" C");
+    arcada.display->println("         ");
+    
+    arcada.display->print("Baro: ");
+    arcada.display->print(pres);
+    arcada.display->print(" hPa");
+    arcada.display->println("         ");
+    
+    arcada.display->print("Humid: ");
+    arcada.display->print(humidity);
+    arcada.display->print(" %");
+    arcada.display->println("         ");
+  
+    arcada.display->print("lat: ");
+    arcada.display->print(GPSLat);
+    arcada.display->println("         ");
+  
+    arcada.display->print("lon: ");
+    arcada.display->print(GPSLon);
+    arcada.display->println("         ");
+  
+    arcada.display->print("alt: ");
+    arcada.display->print(GPSAlt);
+    arcada.display->println("         ");
+
+    /*
+     * Print to Serial Output
+    TODO: Add under DEBUG statement
+  
+    Serial.print(F("Temp: "));
+    Serial.print(temp);
+  
+    Serial.print(F(" Pres: "));
+    Serial.print(pres);
+  
+    Serial.print(F(" Humid: "));
+    Serial.println(humidity);
+  
+    Serial.print("Lat: ");
+    Serial.print(latitude);
+    Serial.print(" ");
+    Serial.print("Long: ");
+    Serial.print(longitude);
+    //Serial.print(" (degrees * 10^-7)");
+    
+  
+    Serial.print(" Alt: ");
+    Serial.print(altitude);
+    Serial.print(" (mm)");
+  
+    Serial.print(" AltMSL: ");
+    Serial.print(altitudeMSL);
+    Serial.print(" (mm)");
+  
+    Serial.print(" SIV: ");
+    Serial.print(SIV);
+  
+    Serial.print(" Fix: ");
+    Serial.println(fixType);
+    */
+  
+ }
+
+ /*!
+  @brief    5 min interval
+  @details  Take the data collected and transmit via the SatComm
+            It takes to send data, to the Iridium network and
+            unfortunatly this is blocking code. Data is sent as 
+            BERT,Lat,Lon,Altitude,FixType,Temp,Pressure,Humidity,SatQuality
+  @return   void
+*/
+
+  if (millis() - lastTime2 > 300000)
   {
-    lastTime = millis(); //Update the timer
+    Serial.println("In the 120 sec function");
+    lastTime2 = millis(); //Update the timer
+    // Example: Print the IMEI
+    err = modem.getIMEI(IMEI, sizeof(IMEI));
+    if (err != ISBD_SUCCESS)
+    {
+       Serial.print(F("getIMEI failed: error "));
+       Serial.println(err);
+       return;
+    }
+    Serial.print(F("IMEI is "));
+    Serial.print(IMEI);
+    Serial.println(F("."));
+
     temp = bmp280.readTemperature();
     pres = bmp280.readPressure()/100;
     humidity = sht30.readHumidity();
-    latitude = myGNSS.getLatitude();
-    longitude = myGNSS.getLongitude();
-    altitude = myGNSS.getAltitude();
+    GPSLat = myGNSS.getLatitude();
+    GPSLon = myGNSS.getLongitude();
+    GPSAlt = myGNSS.getAltitude();
     altitudeMSL = myGNSS.getAltitudeMSL();
     
     SIV = myGNSS.getSIV();
@@ -465,31 +525,25 @@ void loop()
     Minute = myGNSS.getMinute();
     Second = myGNSS.getSecond();
     fixType = myGNSS.getFixType();
-    /*
-    if(fixType == 0) Fix="No fix";
-    else if(fixType == 1) Fix="Dead reckoning";
-    else if(fixType == 2) Fix="2D";
-    else if(fixType == 3) Fix="3D";
-    else if(fixType == 4) Fix="GNSS + Dead reckoning";
-    else if(fixType == 5) Fix="Time only";
-    */
 
     RTK = myGNSS.getCarrierSolutionType();
+
+    // Get Satellite Signal Quality
     /*
     if (RTK == 0) RTXType="No solution";
     else if (RTK == 1) RTXType="High precision floating fix";
     else if (RTK == 2) RTXType="High precision fix";
     */
-    dtostrf(latitude, 10, 7, result);
-    //String telem;
-    //telem = String();
+    err = modem.getSignalQuality(signalQuality);
     //Can't have more than 340 bytes for transmission
     char telem_sat[300];
-    String telem = latitude + ',' + longitude + ',' + altitude + ',' + fixType + ',' +temp+','+pres+','+humidity;
-    telem_sat = telem.toCharArray(telem,300);
+    String telem = String("BERT,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2) + ',' + String(signalQuality);
+    Serial.println(telem);
+    int telemlen = telem.length();
+    telem.toCharArray(telem_sat,telemlen);
     // Send the message
     Serial.print(F("Sending Data: "));
-    Serial.println(telem);
+    Serial.println(telem_sat);
     err = modem.sendSBDText(telem_sat);
     if (err != ISBD_SUCCESS)
     {
@@ -512,263 +566,12 @@ void loop()
       Serial.print(F("clearBuffers failed: error "));
       Serial.println(err);
     }
-  
     Serial.println(F("Done!"));
-  }
-
-/*!
-  @brief    Write data to internal Flash memory
-  @details  Take the data collected and store into the internal
-            Flash memory on the Clue Board. This will append to the
-            file in case of power failure. File format is as follows
-            Temp,Pressure,Humidity,Lat,Lon,Altitude,FixType
-  @return   void
-*/
-
- // Open the datalogging file for writing.  The FILE_WRITE mode will open
-  // the file for appending, i.e. it will add new data to the end of the file.
-  File dataFile = fatfs.open(FILE_NAME, FILE_WRITE);
-  // Check that the file opened successfully and write a line to it.
-  if (dataFile) {
-    dataFile.print(temp,2);
-    dataFile.print(",");
-    dataFile.print(pres, 2);
-    dataFile.print(",");
-    dataFile.print(humidity, 2);
-    dataFile.print(",");
-    dataFile.print(latitude);
-    dataFile.print(",");
-    dataFile.print(longitude);
-    dataFile.print(",");
-    dataFile.print(altitudeMSL);
-    dataFile.print(",");
-    dataFile.print(fixType);
-    dataFile.println();
-    // Finally close the file when done writing.  This is smart to do to make
-    // sure all the data is written to the file.
-    dataFile.close();
-    Serial.println("Wrote new measurement to data file!");
-  }
-  else {
-    Serial.println("Failed to open data file for writing!");
-  }
-
-/*
- * Update the Arcada Display
- */
-  arcada.display->fillScreen(ARCADA_BLACK);
-  arcada.display->setTextColor(ARCADA_WHITE, ARCADA_BLACK);
-  arcada.display->setCursor(0, 0);
-  
-  arcada.display->print("Temp: ");
-  arcada.display->print(temp);
-  arcada.display->print(" C");
-  arcada.display->println("         ");
-  
-  arcada.display->print("Baro: ");
-  arcada.display->print(pres);
-  arcada.display->print(" hPa");
-  arcada.display->println("         ");
-  
-  arcada.display->print("Humid: ");
-  arcada.display->print(humidity);
-  arcada.display->print(" %");
-  arcada.display->println("         ");
-
-  arcada.display->print("lat: ");
-  arcada.display->print(latitude);
-  arcada.display->println("         ");
-
-  arcada.display->print("lon: ");
-  arcada.display->print(longitude);
-  arcada.display->println("         ");
-
-  arcada.display->print("alt: ");
-  arcada.display->print(altitude);
-  arcada.display->println("         ");
-
-  arcada.display->print("altMSL: ");
-  arcada.display->print(altitudeMSL);
-  arcada.display->println("         ");
-
-  /*
-   * Print to Serial Output
-   */
-
-  Serial.print(F("Temp: "));
-  Serial.print(temp);
-
-  Serial.print(F("Pres: "));
-  Serial.print(pres);
-
-  Serial.print(F("Humid: "));
-  Serial.println(humidity);
-
-  Serial.print("Lat: ");
-  Serial.print(latitude);
-
-  Serial.print("Long: ");
-  Serial.print(longitude);
-  Serial.print(" (degrees * 10^-7)");
-  
-
-  Serial.print("Alt: ");
-  Serial.print(altitude);
-  Serial.print(" (mm)");
-
-  Serial.print("AltMSL: ");
-  Serial.print(altitudeMSL);
-  Serial.print(" (mm)");
-
-  Serial.print("SIV: ");
-  Serial.print(SIV);
-
-  Serial.print("Fix: ");
-  Serial.println(fixType);
-
-
-  /*
-   * GPS Processing
-   * String has the following format
-   * GPS:LAT:LON:ALTMSL:FIXTYPE:#SATS:RTK:END
-   * LAT/LON in Deg
-   * Altitude MSL in meters
-   * FIXTYPE
-   * ============
-   * NF - No Fix
-   * DR - Dead Reckoning
-   * 2D - 2D
-   * 3D - 3D
-   * GNSS - GNSS + Dead Reckoning
-   * TIME - Time info only
-   * 
-   * RTK
-   * ==========
-   * 1 - No Solution
-   * 2 - High precision floating fix
-   * 3 - High precision fix
-   */
-
-  
-}
-
-/**************************************************************************/
-/*!
-    @brief  Grab GPS data in one shot, stores into struct which is then
-    returned. 
-    @details 
-    @note   Recursive call
-*/
-/**************************************************************************/
-/*
-Struct gpsGrabber(void){
-
-  long latitude = myGNSS.getLatitude();
-  long longitude = myGNSS.getLongitude();
-  long altitude = myGNSS.getAltitude();
-  long altitudeMSL = myGNSS.getAltitudeMSL();
     
-    byte SIV = myGNSS.getSIV();
-    Serial.print(F(" SIV: "));
-    Serial.print(SIV);
-
-    byte fixType = myGNSS.getFixType();
-    Serial.print(F(" Fix: "));
-    if(fixType == 0) Serial.print(F("No fix"));
-    else if(fixType == 1) Serial.print(F("Dead reckoning"));
-    else if(fixType == 2) Serial.print(F("2D"));
-    else if(fixType == 3) Serial.print(F("3D"));
-    else if(fixType == 4) Serial.print(F("GNSS + Dead reckoning"));
-    else if(fixType == 5) Serial.print(F("Time only"));
-
-    byte RTK = myGNSS.getCarrierSolutionType();
-    Serial.print(" RTK: ");
-    Serial.print(RTK);
-    if (RTK == 0) Serial.print(F(" (No solution)"));
-    else if (RTK == 1) Serial.print(F(" (High precision floating fix)"));
-    else if (RTK == 2) Serial.print(F(" (High precision fix)"));
-
-    Serial.println();
-    Serial.print(myGNSS.getYear());
-    Serial.print("-");
-    Serial.print(myGNSS.getMonth());
-    Serial.print("-");
-    Serial.print(myGNSS.getDay());
-    Serial.print(" ");
-    Serial.print(myGNSS.getHour());
-    Serial.print(":");
-    Serial.print(myGNSS.getMinute());
-    Serial.print(":");
-    Serial.print(myGNSS.getSecond());
-
-    return gpsdata;
-  
-}
-*/
-/**************************************************************************/
-/*!
-  @brief    Adafruit Wheel function
-  @details  Allows for a color fading affect on a RGB LED like the neopixels
-            Passes in a byte value for the wheel position
-  @return   void
-*/
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  if(WheelPos < 85) {
-   return arcada.pixels.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-  } else if(WheelPos < 170) {
-   WheelPos -= 85;
-   return arcada.pixels.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  } else {
-   WheelPos -= 170;
-   return arcada.pixels.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
 }
 
-/*!
-  @brief    getPDMwave
-  @details  Process samples from the microphone on the Adafruit Clue
-            Passes in a 32-bit integer values for the samples
-  @return   void
-*/
-
-int16_t minwave, maxwave;
-short sampleBuffer[256];// buffer to read samples into, each sample is 16-bits
-volatile int samplesRead;// number of samples read
-
-int32_t getPDMwave(int32_t samples) {
-  minwave = 30000;
-  maxwave = -30000;
-  
-  while (samples > 0) {
-    if (!samplesRead) {
-      yield();
-      continue;
-    }
-    for (int i = 0; i < samplesRead; i++) {
-      minwave = min(sampleBuffer[i], minwave);
-      maxwave = max(sampleBuffer[i], maxwave);
-      //Serial.println(sampleBuffer[i]);
-      samples--;
-    }
-    // clear the read count
-    samplesRead = 0;
-  }
-  return maxwave-minwave;  
-}
-
-
-void onPDMdata() {
-  // query the number of bytes available
-  int bytesAvailable = PDM.available();
-
-  // read into the sample buffer
-  PDM.read(sampleBuffer, bytesAvailable);
-
-  // 16-bit, 2 bytes per sample
-  samplesRead = bytesAvailable / 2;
-}
+//Iridium Diagnostic functions
 
 #if DIAGNOSTICS
 void ISBDConsoleCallback(IridiumSBD *device, char c)
