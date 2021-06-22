@@ -1,7 +1,7 @@
 /*
  * Backup Emergency Recovery Transmitter
  * HW Version - 3.0
- * FW Version - 1.3
+ * FW Version - 1.4
  * Matthew E. Nelson
  */
 
@@ -537,7 +537,7 @@ void loop() {
     err = modem.getSignalQuality(signalQuality);
     //Can't have more than 340 bytes for transmission
     char telem_sat[300];
-    String telem = String("BERT,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2) + ',' + String(signalQuality);
+    String telem = String("B,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2) + ',' + String(signalQuality);
     Serial.println(telem);
     int telemlen = telem.length();
     telem.toCharArray(telem_sat,telemlen);
