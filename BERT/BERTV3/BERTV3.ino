@@ -537,7 +537,8 @@ void loop() {
     err = modem.getSignalQuality(signalQuality);
     //Can't have more than 340 bytes for transmission
     char telem_sat[300];
-    String telem = String("B,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2) + ',' + String(signalQuality);
+    //String telem = String("B,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2) + ',' + String(signalQuality);
+    String telem = String("B,") + String(GPSLat) + ',' + String(GPSLon) + ',' + String(GPSAlt) + ',' + String(fixType) + ',' + String(temp,2) + ',' + String(pres,2) + ',' + String(humidity,2);
     Serial.println(telem);
     int telemlen = telem.length();
     telem.toCharArray(telem_sat,telemlen);
