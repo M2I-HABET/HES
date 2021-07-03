@@ -6,11 +6,17 @@ base electronics used. In 2020 this was expanded to include all engineering syst
 rolled out as HES 4.0. 
 
 This repo serves as a central hub for managing the systems and has submodules to the additional 
-GitHub repos used that make up the HES family of hardware/software.
+GitHub repos used that make up the HES family of hardware/software. These repos currently include
+
+- BERT (Backup Emergency Recovery Transmitter)
+- HABETOS (All HABET Firmware and Operating Systems used on board the spacecrafts)
+- HAR (High Altitude Reporter)
+- RAP (Remote Activated Pad)
+- CyTrack - Online flight tracking, prediction and control software
 
 HES 4.0 will have the following features:
 
-* Support for Adafruit Feather boards and BBC Micro-bit boards
+* Support for Adafruit Feather boards and Adafruit Clue boards
 * Custom Power Management Module for power management and regulation
 * Support for QWICC connectors (I2C) for additional sensors
 * Support for additional Feather Wing boards to be plugged
