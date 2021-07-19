@@ -16,14 +16,15 @@ GitHub repos used that make up the HES family of hardware/software. These repos 
 
 HES 4.0 will have the following features:
 
-* Support for Adafruit Feather boards and Adafruit Clue boards
-* Custom Power Management Module for power management and regulation
+* Standadize on the Adafruit Clue board for processing and displaying information
+* Custom Power Management Module for power management and regulation for both primary and secondary power systems
 * Support for QWICC connectors (I2C) for additional sensors
 * Support for additional Feather Wing boards to be plugged
 * 3D printable enclosure
 * OLED and LED status system
 * 433 LoRa system for TT&C (Telemetry, Tracking & Control)
 * Support for standalone hardware through RJ45 connection (Power, Serial and I2C)
+* New SatComm system for backup purposes on TT&C
 
 Future support will include:
 * Support for Raspberry Pi Compute Modules
